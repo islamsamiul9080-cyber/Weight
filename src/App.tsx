@@ -34,7 +34,7 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -56,10 +56,13 @@ import {
   doc,
   deleteDoc,
   getDoc,
+  getDocFromServer,
   setDoc,
   Timestamp
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from './lib/firebase';
+
+// Connection check logic moved inside App component
 
 /** Utility for Tailwind class merging */
 function cn(...inputs: ClassValue[]) {
@@ -286,22 +289,30 @@ const AICoach = () => {
         throw new Error("GEMINI_API_KEY is not defined in the environment.");
       }
 
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
-        systemInstruction: "You are FitTrack AI Coach, a high-energy, supportive, and extremely knowledgeable fitness expert. You specialize in weightlifting, progressive overload, nutrition, and injury prevention. Keep your responses punchy, motivational, and structured with clear advice. Use occasional emoji like 💪🔥🏋️‍♂️."
+      const ai = new GoogleGenAI({ apiKey });
+      
+      // Combine history with new user message
+      const fullMessages = [...messages, { role: 'user' as const, content: userMsg }];
+      
+      // Gemini requires contents to start with 'user' role.
+      // Filter out leading 'model' (assistant) messages.
+      const firstUserIndex = fullMessages.findIndex(m => m.role === 'user');
+      const sanitizedContents = firstUserIndex !== -1 
+        ? fullMessages.slice(firstUserIndex).map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content }]
+          }))
+        : [{ role: 'user', parts: [{ text: userMsg }] }];
+
+      const response = await ai.models.generateContent({ 
+        model: "gemini-flash-latest",
+        contents: sanitizedContents,
+        config: {
+          systemInstruction: "You are FitTrack AI Coach, a high-energy, supportive, and extremely knowledgeable fitness expert. You specialize in weightlifting, progressive overload, nutrition, and injury prevention. Keep your responses punchy, motivational, and structured with clear advice. Use occasional emoji like 💪🔥🏋️‍♂️."
+        }
       });
 
-      const chat = model.startChat({
-        history: messages.map(msg => ({
-          role: msg.role === 'user' ? 'user' : 'model',
-          parts: [{ text: msg.content }]
-        })),
-      });
-
-      const result = await chat.sendMessage(userMsg);
-      const response = result.response;
-      const fullText = response.text();
+      const fullText = response.text || "Sorry, I lost my breath there. Can you repeat that?";
       setMessages(prev => [...prev, { role: 'assistant', content: fullText }]);
     } catch (err) {
       console.error("AI Coach Error:", err);
@@ -329,7 +340,7 @@ const AICoach = () => {
             exit={{ opacity: 0, y: 100, scale: 0.9 }}
             className="fixed inset-0 sm:inset-auto sm:bottom-24 sm:right-6 sm:w-[400px] h-[600px] bg-bg-sidebar border border-border-medium sm:rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-50 flex flex-col overflow-hidden"
           >
-            <div className="px-6 py-4 bg-bg-card/50 border-b border-border-subtle flex items-center justify-between backdrop-blur-md">
+            <div className="px-6 py-4 bg-bg-card border-b border-border-subtle flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 avatar-gradient rounded-xl flex items-center justify-center text-white shadow-lg">
                   <Bot size={24} />
@@ -383,8 +394,8 @@ const AICoach = () => {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                  placeholder="Ask Gemini anything..."
-                  className="w-full bg-bg-card border border-border-medium rounded-xl px-5 py-3.5 text-sm focus:outline-none focus:border-brand-primary/50 transition-all text-text-primary placeholder:text-text-muted shadow-inner"
+                  placeholder="Search anything Gemini..."
+                  className="w-full bg-bg-card border border-border-medium rounded-xl px-5 py-3.5 text-sm focus:outline-none focus:border-brand-primary placeholder:text-text-muted transition-colors text-text-primary"
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:block">
                   <span className="text-[10px] font-bold text-text-muted bg-white/5 px-1.5 py-0.5 rounded border border-white/5 uppercase">⌘ K</span>
@@ -1194,6 +1205,21 @@ export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    async function checkConnection() {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+        console.log("Firestore connection established.");
+        setIsFirestoreConnected(true);
+      } catch (error) {
+        console.error("Connection check failed:", error);
+        setIsFirestoreConnected(false);
+      }
+    }
+    checkConnection();
+  }, []);
 
   useEffect(() => {
     return onAuthStateChanged(auth, async (u) => {
@@ -1377,6 +1403,22 @@ export default function App() {
 
       {/* AI Coach Overlay */}
       <AICoach />
+
+      {isFirestoreConnected === false && (
+        <div className="fixed bottom-24 left-6 right-6 sm:left-auto sm:right-6 sm:w-80 bg-red-500/90 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl z-[60] border border-red-400 flex items-center gap-3">
+          <ShieldCheck size={24} className="flex-shrink-0" />
+          <div className="text-xs">
+            <p className="font-bold uppercase tracking-wider mb-0.5">Connection Warning</p>
+            <p className="opacity-90">Firestore is currently unreachable. Some data may not sync correctly.</p>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="ml-auto p-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+          >
+            <RotateCcw size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

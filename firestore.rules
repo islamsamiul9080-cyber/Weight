@@ -42,5 +42,10 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
+
+    // Connection Test Path
+    match /test/connection {
+      allow read: if true;
+    }
   }
 }
