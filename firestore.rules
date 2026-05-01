@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         // Emergency fallback check if doc doesn't exist yet but user is the specific creator email if applicable
+         request.auth.token.email == 'akmshafiqul415@gmail.com');
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      // Allow users to create their profile or update themselves
+      // In a production app, role changes would be server-side only.
+      // For this app, we allow the 'Host Login' logic.
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+    }
+
+    // Transformation Media & Library
+    match /media/{mediaId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /library/{itemId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

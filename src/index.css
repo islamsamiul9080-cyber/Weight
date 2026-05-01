@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Anton", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-brand-primary: #6366F1;
+  --color-brand-secondary: #A855F7;
+  --color-bg-main: #0A0A0B;
+  --color-bg-sidebar: #121418;
+  --color-bg-card: #1E2229;
+  --color-border-subtle: #23272E;
+  --color-border-medium: #2D333D;
+  --color-text-primary: #E2E8F0;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted: #475569;
+}
+
+@layer base {
+  body {
+    @apply antialiased bg-bg-main text-text-primary;
+  }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.elegant-gradient {
+  background: radial-gradient(circle at 50% -20%, #1E1E2E 0%, #0A0A0B 60%);
+}
+
+.avatar-gradient {
+  background: linear-gradient(135deg, #6366F1 0%, #A855F7 100%);
+}
